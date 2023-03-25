@@ -280,23 +280,24 @@ class boss_garalon : public CreatureScript
 
                 for (GameObject* door : doorList)
                     door->SetGoState(GO_STATE_READY);
-                    
+
                 SummonAndAddLegs();
 
                 me->AddAura(SPELL_CRUSH_BODY_VIS, me);  // And add the body crush marker.
-                DoCast(me, SPELL_PHER_INIT_CAST);       // 2s cast time
 
-                // This need only in combat initialize cuz rogue/hunter/elf issue
-                scheduler.Schedule(Seconds(4), [this](TaskContext)
-                {
-                    DoCast(me, SPELL_PHER_INIT_CAST);
-                });
+                events.ScheduleEvent(EVENT_FURIOUS_SWIPE, urand(8000, 11000));
+                events.ScheduleEvent(EVENT_PHEROMONES, urand(2000, 3000));
+                events.ScheduleEvent(EVENT_CRUSH, 30000); // First Crush always seems to have this timer, on any difficulty.
+                events.ScheduleEvent(EVENT_GARALON_BERSERK, 7 * MINUTE * IN_MILLISECONDS); // 7 min enrage timer.
 
                 if (instance)
                 {
                     for (auto&& it : me->GetVehicleKit()->Seats)
                         if (Unit* passenger = ObjectAccessor::GetUnit(*me, it.second.Passenger.Guid))
                             instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, passenger);
+
+                    instance->SetBossState(DATA_GARALON, IN_PROGRESS);
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me); // Add
                 }
 
                 if (Creature* meljarak = GetClosestCreatureWithEntry(me, NPC_WIND_LORD_MELJARAK_INTRO, 50.0f))
