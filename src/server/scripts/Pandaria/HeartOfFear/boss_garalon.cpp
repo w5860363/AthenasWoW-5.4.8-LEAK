@@ -700,7 +700,6 @@ public:
             if (targets.empty() || targets.size() < 2) // If he hits less than two players, it's time to go for Fury.
             {
                 CAST_AI(boss_garalon::boss_garalonAI, GetCaster()->ToCreature()->AI())->DoAction(ACTION_FUR_SWIPE_FAILED);
-                GetCaster()->ToCreature()->AI()->DoAction(ACTION_PHEROMONES_JUMP_OR_PLAYERS_UNDERNEATH);
                 //if (Unit* caster = GetCaster())
                     //caster->GetAI()->DoAction(ACTION_FUR_SWIPE_FAILED);
             }
