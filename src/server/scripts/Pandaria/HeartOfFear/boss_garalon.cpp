@@ -114,6 +114,17 @@ enum Misc
     WORLD_STATE_LIKE_AN_ARROR_TO_THE_FACE = 11791,
 };
 
+enum eGaralonEvents
+{
+    // Garalon
+    EVENT_FURIOUS_SWIPE   = 1,      // About 8 - 11 seconds after pull. Every 8 seconds.
+    EVENT_PHEROMONES,               // About 2 -  3 seconds after pull.
+    EVENT_CRUSH,                    // About 30     seconds after pull. Every 37.5 seconds.
+    EVENT_MEND_LEG,
+
+    EVENT_GARALON_BERSERK           // Goes with SPELL_MASSIVE_CRASH.
+};
+
 class boss_garalon : public CreatureScript
 {
     public:
