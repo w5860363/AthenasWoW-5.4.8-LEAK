@@ -274,6 +274,13 @@ class boss_garalon : public CreatureScript
 
             void EnterCombat(Unit* who) override
             {
+                // Activation of the walls
+                std::list<GameObject*> doorList;
+                GetGameObjectListWithEntryInGrid(doorList, me, GO_GARALON_DOOR, 100.0f);
+
+                for (GameObject* door : doorList)
+                    door->SetGoState(GO_STATE_READY);
+                    
                 SummonAndAddLegs();
 
                 me->AddAura(SPELL_CRUSH_BODY_VIS, me);  // And add the body crush marker.
@@ -615,59 +622,6 @@ class npc_pheromone_trail : public CreatureScript
         }
 };
 
-// Furious Swipe: 122735.
-class spell_garalon_furious_swipe : public SpellScript
-{
-    PrepareSpellScript(spell_garalon_furious_swipe);
-
-    void FilterTargets(std::list<WorldObject*>& targets)
-    {
-        Creature* garalon = GetCaster()->ToCreature();
-        // The target list size indicates how many players Garalon hits. We let him know what to do afterwards.
-        if (garalon && targets.size() < 2) // If he hits less than two players, it's time to go for Fury.
-            garalon->AI()->DoAction(ACTION_FUR_SWIPE_FAILED);
-    }
-
-    void Register() override
-    {
-        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garalon_furious_swipe::FilterTargets, EFFECT_0, TARGET_UNIT_CONE_ENEMY_104);
-    }
-};
-
-// Pheromones (Force_Cast, 2 sec. cast time): 123808.
-class spell_garalon_pheromones_forcecast : public SpellScript
-{
-    PrepareSpellScript(spell_garalon_pheromones_forcecast);
-
-    void FilterTargets(std::list<WorldObject*>& targets)
-    {
-        targets.sort(Trinity::ObjectDistanceOrderPred{ GetCaster() });
-        if (!targets.empty())
-            targets.resize(1);
-    }
-
-    SpellCastResult CheckCast()
-    {
-        if (Unit* caster = GetCaster())
-        {
-            std::list<Player*> pList;
-            GetPlayerListInGrid(pList, caster, 200.0f);
-            pList.remove_if([=](Player* target) { return target && !target->HasAura(SPELL_PHEROMONES_AURA); });
-
-            if (!pList.empty())
-                return SPELL_FAILED_UNKNOWN;
-        }
-
-        return SPELL_CAST_OK;
-    }
-
-    void Register() override
-    {
-        OnCheckCast += SpellCheckCastFn(spell_garalon_pheromones_forcecast::CheckCast);
-        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garalon_pheromones_forcecast::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
-    }
-};
-
 // Mend Leg: 123495
 class spell_garalon_mend_leg_trigger : public SpellScript
 {
@@ -718,188 +672,459 @@ class spell_garalon_mend_leg : public SpellScript
     }
 };
 
-// Crush Trigger: 117709.
-class spell_garalon_crush_trigger : public SpellScript
+// Furious Swipe: 122735.
+class spell_garalon_furious_swipe : public SpellScriptLoader
 {
-    PrepareSpellScript(spell_garalon_crush_trigger);
+public:
+    spell_garalon_furious_swipe() : SpellScriptLoader("spell_garalon_furious_swipe") { }
 
-    void SelectTarget(std::list<WorldObject*>& targets)
+    class spell_garalon_furious_swipeSpellScript : public SpellScript
     {
-        if (!targets.empty())
-            targets.resize(1);
+        PrepareSpellScript(spell_garalon_furious_swipeSpellScript);
+
+        bool Validate(SpellInfo const* spellEntry) override
+        {
+            if (!sSpellMgr->GetSpellInfo(SPELL_FURIOUS_SWIPE))
+                return false;
+            return true;
+        }
+
+        bool Load() override
+        {
+            return true;
+        }
+
+        void FilterTargets(std::list<WorldObject*>& targets)
+        {
+            // The target list size indicates how many players Garalon hits. We let him know what to do afterwards.
+            if (targets.empty() || targets.size() < 2) // If he hits less than two players, it's time to go for Fury.
+            {
+                CAST_AI(boss_garalon::boss_garalonAI, GetCaster()->ToCreature()->AI())->DoAction(ACTION_FUR_SWIPE_FAILED);
+                GetCaster()->ToCreature()->AI()->DoAction(ACTION_PHEROMONES_JUMP_OR_PLAYERS_UNDERNEATH);
+                //if (Unit* caster = GetCaster())
+                    //caster->GetAI()->DoAction(ACTION_FUR_SWIPE_FAILED);
+            }
+        }
+
+        void Register() override
+        {
+            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garalon_furious_swipeSpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_CONE_ENEMY_104);
+        }
+    };
+
+    SpellScript* GetSpellScript() const override
+    {
+        return new spell_garalon_furious_swipeSpellScript();
     }
+};
 
-    void HandleDummy(SpellEffIndex)
+// Pheromones (Force_Cast, 2 sec. cast time): 123808.
+class spell_garalon_pheromones_forcecast : public SpellScriptLoader
+{
+public:
+    spell_garalon_pheromones_forcecast() : SpellScriptLoader("spell_garalon_pheromones_forcecast") { }
+
+    class spell_garalon_pheromones_forcecastSpellScript : public SpellScript
     {
-        if (Creature* garalon = GetCaster()->ToCreature())
-            garalon->AI()->DoAction(ACTION_PHEROMONES_JUMP_OR_PLAYERS_UNDERNEATH);
+        PrepareSpellScript(spell_garalon_pheromones_forcecastSpellScript);
+
+        bool Validate(SpellInfo const* spellEntry) override
+        {
+            if (!sSpellMgr->GetSpellInfo(SPELL_PHER_INIT_CAST))
+                return false;
+            return true;
+        }
+
+        bool Load() override
+        {
+            return true;
+        }
+
+        void FilterTargets(std::list<WorldObject*>& targets)
+        {
+            if (targets.empty())
+                return;
+
+            // Find the nearest player in 100 yards, and that will be the target (done like that on off).
+            WorldObject* target = GetCaster()->ToCreature()->SelectNearestPlayer(100.0f);
+
+            targets.clear();
+            targets.push_back(target);
+        }
+
+        void Register() override
+        {
+            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garalon_pheromones_forcecastSpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
+        }
+    };
+
+    SpellScript* GetSpellScript() const override
+    {
+        return new spell_garalon_pheromones_forcecastSpellScript();
     }
+};
 
-    void Register() override
+// Crush Trigger: 117709.
+class spell_garalon_crush_trigger : public SpellScriptLoader
+{
+public:
+    spell_garalon_crush_trigger() : SpellScriptLoader("spell_garalon_crush_trigger") { }
+
+    class spell_garalon_crush_triggerSpellScript : public SpellScript
     {
-        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garalon_crush_trigger::SelectTarget, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
-        OnEffectHitTarget += SpellEffectFn(spell_garalon_crush_trigger::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+        PrepareSpellScript(spell_garalon_crush_triggerSpellScript);
+
+        bool Validate(SpellInfo const* spellEntry) override
+        {
+            if (!sSpellMgr->GetSpellInfo(SPELL_CRUSH_TRIGGER))
+                return false;
+            return true;
+        }
+
+        bool Load() override
+        {
+            return true;
+        }
+
+        void HandleDummy(SpellEffIndex /*effIndex*/)
+        {
+            // If there are no hit players, means there are no players underneath Garalon's body, so there's nothing to do.
+            if (!GetCaster() || !GetHitUnit())
+                return;
+
+            // Now, if there are players under Garalon, he will cast Crush.
+            GetCaster()->ToCreature()->AI()->DoAction(ACTION_PHEROMONES_JUMP_OR_PLAYERS_UNDERNEATH);
+        }
+
+        void Register() override
+        {
+            OnEffectHitTarget += SpellEffectFn(spell_garalon_crush_triggerSpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+        }
+    };
+
+    SpellScript* GetSpellScript() const override
+    {
+        return new spell_garalon_crush_triggerSpellScript();
+    }
+};
+
+// Target check for Pheromones  Taunt / Attack Me + Broken Leg spells.
+class BossCheck : public std::unary_function<Unit*, bool>
+{
+public:
+    bool operator()(WorldObject* object)
+    {
+        return object->GetEntry() != NPC_GARALON;
+    }
+};
+
+// Pheromones Taunt: 123109.
+class spell_garalon_pheromones_taunt : public SpellScriptLoader
+{
+public:
+    spell_garalon_pheromones_taunt() : SpellScriptLoader("spell_garalon_pheromones_taunt") { }
+
+    class spell_garalon_pheromones_tauntSpellScript : public SpellScript
+    {
+        PrepareSpellScript(spell_garalon_pheromones_tauntSpellScript);
+
+        bool Validate(SpellInfo const* spellEntry) override
+        {
+            if (!sSpellMgr->GetSpellInfo(SPELL_CRUSH_TRIGGER))
+                return false;
+            return true;
+        }
+
+        bool Load() override
+        {
+            return true;
+        }
+
+        void FilterTargets(std::list<WorldObject*>& targets)
+        {
+            if (targets.empty())
+                return;
+
+            // Only the boss gets taunted.
+            targets.remove_if(BossCheck());
+        }
+
+        void Register() override
+        {
+            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garalon_pheromones_tauntSpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
+            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garalon_pheromones_tauntSpellScript::FilterTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENTRY);
+        }
+    };
+
+    SpellScript* GetSpellScript() const override
+    {
+        return new spell_garalon_pheromones_tauntSpellScript();
+    }
+};
+
+// Broken Leg: 122786.
+class spell_garalon_broken_leg : public SpellScriptLoader
+{
+public:
+    spell_garalon_broken_leg() : SpellScriptLoader("spell_garalon_broken_leg") { }
+
+    class spell_garalon_broken_leg_SpellScript : public SpellScript
+    {
+        PrepareSpellScript(spell_garalon_broken_leg_SpellScript);
+
+        bool Validate(SpellInfo const* spellEntry) override
+        {
+            if (!sSpellMgr->GetSpellInfo(SPELL_BROKEN_LEG))
+                return false;
+            return true;
+        }
+
+        bool Load() override
+        {
+            return true;
+        }
+
+        void FilterTargets(std::list<WorldObject*>& targets)
+        {
+            /*if (targets.empty())
+                return;
+            // Only casted by boss on self.
+            targets.remove_if(BossCheck());*/
+            targets.clear();
+        }
+
+        void Register() override
+        {
+            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garalon_broken_leg_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
+            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garalon_broken_leg_SpellScript::FilterTargets, EFFECT_1, TARGET_UNIT_NEARBY_ENTRY);
+        }
+    };
+
+    SpellScript* GetSpellScript() const override
+    {
+        return new spell_garalon_broken_leg_SpellScript();
     }
 };
 
 // Damaged: 123818
-class spell_garalon_damaged : public SpellScript
+class spell_garalon_damaged : public SpellScriptLoader
 {
-    PrepareSpellScript(spell_garalon_damaged);
+public:
+    spell_garalon_damaged() : SpellScriptLoader("spell_garalon_damaged") { }
 
-    void HandleScript(SpellEffIndex)
+    class spell_garalon_damaged_SpellScript : public SpellScript
     {
-        // He becomes immune to the Pheromones Taunt / Attack Me spell.
-        GetCaster()->ApplySpellImmune(0, IMMUNITY_ID, SPELL_PHEROMONES_TAUNT, true);
-    }
+        PrepareSpellScript(spell_garalon_damaged_SpellScript);
 
-    void Register() override
+        bool Validate(SpellInfo const* spellEntry) override
+        {
+            if (!sSpellMgr->GetSpellInfo(SPELL_DAMAGED))
+                return false;
+            return true;
+        }
+
+        bool Load() override
+        {
+            return true;
+        }
+
+        void HandleScript(SpellEffIndex /*effIndex*/)
+        {
+            if (!GetCaster() || !GetHitUnit())
+                return;
+
+            // He becomes immune to the Pheromones Taunt / Attack Me spell.
+            GetCaster()->ApplySpellImmune(0, IMMUNITY_ID, SPELL_PHEROMONES_TAUNT, true);
+        }
+
+        void Register() override
+        {
+            OnEffectHitTarget += SpellEffectFn(spell_garalon_damaged_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_APPLY_AURA);
+        }
+    };
+
+    SpellScript* GetSpellScript() const override
     {
-        OnEffectHitTarget += SpellEffectFn(spell_garalon_damaged::HandleScript, EFFECT_0, SPELL_EFFECT_REMOVE_AURA);
+        return new spell_garalon_damaged_SpellScript();
     }
 };
 
 // Pheromones summon 128573
-class spell_garalon_pheromones_summon : public SpellScript
+class spell_garalon_pheromones_summon : public SpellScriptLoader
 {
-    PrepareSpellScript(spell_garalon_pheromones_summon);
+public:
+    spell_garalon_pheromones_summon() : SpellScriptLoader("spell_garalon_pheromones_summon") { }
 
-    SpellCastResult CheckCast()
+    class spell_garalon_pheromones_summon_SpellScript : public SpellScript
     {
-        Unit* caster = GetCaster();
-        if (!caster)
+        PrepareSpellScript(spell_garalon_pheromones_summon_SpellScript);
+
+        bool Validate(SpellInfo const* spellEntry) override
+        {
+            if (!sSpellMgr->GetSpellInfo(SPELL_SUMM_PHER_TRAIL))
+                return false;
+            return true;
+        }
+
+        bool Load() override
+        {
+            return true;
+        }
+
+        SpellCastResult CheckCast()
+        {
+            Unit* caster = GetCaster();
+            if (!caster)
+                return SPELL_CAST_OK;
+
+            std::list<Creature*> pheromonesList;
+            caster->GetCreatureListWithEntryInGrid(pheromonesList, NPC_PHEROMONE_TRAIL, 4.0f);
+
+            if (!pheromonesList.empty())
+                return SPELL_FAILED_DONT_REPORT;
+
             return SPELL_CAST_OK;
-
-        std::list<Creature*> pheromonesList;
-        caster->GetCreatureListWithEntryInGrid(pheromonesList, NPC_PHEROMONE_TRAIL, 0.5f);
-
-        if (!pheromonesList.empty())
-            return SPELL_FAILED_DONT_REPORT;
-
-        return SPELL_CAST_OK;
-    }
+        }
 
 
-    void Register() override
+        void Register() override
+        {
+            OnCheckCast += SpellCheckCastFn(spell_garalon_pheromones_summon_SpellScript::CheckCast);
+        }
+    };
+
+    SpellScript* GetSpellScript() const override
     {
-        OnCheckCast += SpellCheckCastFn(spell_garalon_pheromones_summon::CheckCast);
+        return new spell_garalon_pheromones_summon_SpellScript();
     }
 };
 
 // Pheromone Trail Dmg 123120
-class spell_garalon_pheromones_trail_dmg : public SpellScript
+class spell_garalon_pheromones_trail_dmg : public SpellScriptLoader
 {
-    PrepareSpellScript(spell_garalon_pheromones_trail_dmg);
+public:
+    spell_garalon_pheromones_trail_dmg() : SpellScriptLoader("spell_garalon_pheromones_trail_dmg") { }
 
-    void HandleOnHit()
+    class spell_garalon_pheromones_trail_dmg_SpellScript : public SpellScript
     {
-        if (Aura* aur = GetHitUnit()->GetAura(SPELL_PUNGENCY))
-            SetHitDamage(int32(GetHitDamage() * (1.0f + float(aur->GetStackAmount() / 10.0f))));
-    }
+        PrepareSpellScript(spell_garalon_pheromones_trail_dmg_SpellScript);
 
-    // Delay in 1.5s after spawn
-    void CheckTargets(std::list<WorldObject*>& targets)
+        bool Validate(SpellInfo const* spellEntry) override
+        {
+            if (!sSpellMgr->GetSpellInfo(SPELL_PHER_TRAIL_DMG))
+                return false;
+            return true;
+        }
+
+        bool Load() override
+        {
+            return true;
+        }
+
+        void HandleOnHit()
+        {
+            if (Unit* target = GetHitUnit())
+            {
+                if (Aura* aur = target->GetAura(SPELL_PUNGENCY))
+                    SetHitDamage(int32(GetHitDamage() * (1.0f + float(aur->GetStackAmount() / 10.0f))));
+            }
+        }
+
+
+        void Register() override
+        {
+            OnHit += SpellHitFn(spell_garalon_pheromones_trail_dmg_SpellScript::HandleOnHit);
+        }
+    };
+
+    SpellScript* GetSpellScript() const override
     {
-        if (Unit* caster = GetCaster())
-            if (caster->ToCreature())
-                if (caster->ToCreature()->AI()->GetData(TYPE_PHEROMONES_DELAY))
-                    return;
-
-        targets.clear();
-    }
-
-    void Register() override
-    {
-        OnHit += SpellHitFn(spell_garalon_pheromones_trail_dmg::HandleOnHit);
-        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garalon_pheromones_trail_dmg::CheckTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
+        return new spell_garalon_pheromones_trail_dmg_SpellScript();
     }
 };
 
 // Pheromones Switch 123100
-class spell_garalon_pheromones_switch : public SpellScript
+class spell_garalon_pheromones_switch : public SpellScriptLoader
 {
-    PrepareSpellScript(spell_garalon_pheromones_switch);
+public:
+    spell_garalon_pheromones_switch() : SpellScriptLoader("spell_garalon_pheromones_switch") { }
 
-    void HandleScript(SpellEffIndex)
+    class spell_garalon_pheromones_switch_SpellScript : public SpellScript
     {
-        GetCaster()->RemoveAurasDueToSpell(SPELL_PHEROMONES_AURA);
-        if (InstanceScript* instance = GetCaster()->GetInstanceScript())
-            if (!GetCaster()->GetMap()->IsHeroic())
-                if (Creature* garalon = GetCaster()->GetMap()->GetCreature(instance->GetData64((NPC_GARALON))))
-                    garalon->AI()->DoAction(ACTION_PHEROMONES_JUMP_OR_PLAYERS_UNDERNEATH);
-    }
+        PrepareSpellScript(spell_garalon_pheromones_switch_SpellScript);
 
-    void FillTargets(std::list<WorldObject*>& targets)
-    {
-        if (!targets.empty())
-            targets.resize(1);
-    }
-
-    void Register() override
-    {
-        OnEffectHitTarget += SpellEffectFn(spell_garalon_pheromones_switch::HandleScript, EFFECT_0, SPELL_EFFECT_FORCE_CAST);
-        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garalon_pheromones_switch::FillTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ALLY);
-    }
-};
-
-// Pheromones ExAuraState: 130662
-class spell_garalon_pheromones_dummy : public AuraScript
-{
-    PrepareAuraScript(spell_garalon_pheromones_dummy);
-
-    void OnRemove(AuraEffect const*, AuraEffectHandleModes)
-    {
-        if (Unit* caster = GetOwner()->ToUnit())
-            if (InstanceScript* instance = GetUnitOwner()->GetInstanceScript())
-                if (instance->GetBossState(DATA_GARALON) == IN_PROGRESS)
-                    if (Creature* garalon = ObjectAccessor::GetCreature(*caster, instance->GetData64(DATA_GARALON)))
-                        garalon->CastSpell(garalon, SPELL_PHER_INIT_CAST);
-    }
-
-    void Register() override
-    {
-        OnEffectRemove += AuraEffectRemoveFn(spell_garalon_pheromones_dummy::OnRemove, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
-    }
-};
-
-// Pheromones Damage Eff 123092
-class spell_garalon_pheromones_damage_eff : public SpellScript
-{
-    PrepareSpellScript(spell_garalon_pheromones_damage_eff);
-
-    void HandleOnHit()
-    {
-        if (Unit* caster = GetCaster())
-            if (Aura* aur = caster->GetAura(SPELL_PUNGENCY))
-                SetHitDamage(int32(GetHitDamage() * (1.0f + float(aur->GetStackAmount() / 10.0f))));
-    }
-
-    void Register() override
-    {
-        OnHit += SpellHitFn(spell_garalon_pheromones_damage_eff::HandleOnHit);
-    }
-};
-
-// Broken Leg 122786
-class spell_garalon_borken_leg : public SpellScript
-{
-    PrepareSpellScript(spell_garalon_borken_leg);
-
-    void HandleHit()
-    {
-        if (Creature* target = GetHitUnit()->ToCreature())
+        bool Validate(SpellInfo const* spellEntry) override
         {
-            uint32 damage = target->CountPctFromMaxHealth(GetSpellInfo()->Effects[EFFECT_2].BasePoints);
-            target->LowerPlayerDamageReq(damage);
-            if (target->GetEntry() != NPC_GARALON_BODY) // Shit with split damage
-                damage = 0;
-            SetHitDamage(damage);
+            if (!sSpellMgr->GetSpellInfo(SPELL_PHER_TRAIL_DMG))
+                return false;
+            return true;
         }
-    }
 
-    void Register() override
+        bool Load() override
+        {
+            return true;
+        }
+
+        void HandleScript(SpellEffIndex /*effIndex*/)
+        {
+            if (!GetCaster() || !GetHitUnit())
+                return;
+
+            GetCaster()->RemoveAurasDueToSpell(SPELL_PHEROMONES_AURA);
+            if (InstanceScript* pInstance = GetCaster()->GetInstanceScript())
+            {
+                if (Creature* garalon = GetCaster()->GetMap()->GetCreature(pInstance->GetData64((NPC_GARALON))))
+                    garalon->AI()->DoAction(ACTION_PHEROMONES_JUMP_OR_PLAYERS_UNDERNEATH);
+            }
+        }
+
+        void FillTargets(std::list<WorldObject*>& targets)
+        {
+            if (!targets.empty())
+                targets.resize(1);
+        }
+
+        void Register() override
+        {
+            OnEffectHitTarget += SpellEffectFn(spell_garalon_pheromones_switch_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_FORCE_CAST);
+            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garalon_pheromones_switch_SpellScript::FillTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ALLY);
+        }
+    };
+
+    SpellScript* GetSpellScript() const override
     {
-        OnHit += SpellHitFn(spell_garalon_borken_leg::HandleHit);
+        return new spell_garalon_pheromones_switch_SpellScript();
+    }
+};
+
+// 123081 - Pungency
+class spell_garalon_pungency : public SpellScriptLoader
+{
+public:
+    spell_garalon_pungency() : SpellScriptLoader("spell_garalon_pungency") { }
+
+    class spell_garalon_pungencyAuraScript : public AuraScript
+    {
+        PrepareAuraScript(spell_garalon_pungencyAuraScript);
+
+        void Duration(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+        {
+            if (Unit* target = GetTarget())
+            {
+                if (target->GetInstanceScript()->instance->IsHeroic())
+                    SetDuration(240000);
+            }
+        }
+
+        void Register() override
+        {
+            OnEffectApply += AuraEffectApplyFn(spell_garalon_pungencyAuraScript::Duration, EFFECT_0, SPELL_AURA_MOD_DAMAGE_DONE_FOR_MECHANIC, AURA_EFFECT_HANDLE_REAL);
+        }
+    };
+
+    AuraScript* GetAuraScript() const override
+    {
+        return new spell_garalon_pungencyAuraScript();
     }
 };
 
@@ -909,16 +1134,16 @@ void AddSC_boss_garalon()
     new npc_garalon_body();
     new npc_garalon_leg();
     new npc_pheromone_trail();
-    new spell_script<spell_garalon_furious_swipe>("spell_garalon_furious_swipe");
-    new spell_script<spell_garalon_pheromones_forcecast>("spell_garalon_pheromones_forcecast");
+    new spell_garalon_furious_swipe();          // 122735
+    new spell_garalon_pheromones_forcecast();   // 123808
     new spell_script<spell_garalon_mend_leg_trigger>("spell_garalon_mend_leg_trigger");
     new spell_script<spell_garalon_mend_leg>("spell_garalon_mend_leg");
-    new spell_script<spell_garalon_crush_trigger>("spell_garalon_crush_trigger");
-    new spell_script<spell_garalon_damaged>("spell_garalon_damaged");
-    new spell_script<spell_garalon_pheromones_summon>("spell_garalon_pheromones_summon");
-    new spell_script<spell_garalon_pheromones_trail_dmg>("spell_garalon_pheromones_trail_dmg");
-    new spell_script<spell_garalon_pheromones_switch>("spell_garalon_pheromones_switch");
-    new aura_script<spell_garalon_pheromones_dummy>("spell_garalon_pheromones_dummy");
-    new spell_script<spell_garalon_pheromones_damage_eff>("spell_garalon_pheromones_damage_eff");
-    new spell_script<spell_garalon_borken_leg>("spell_garalon_borken_leg");
+    new spell_garalon_crush_trigger();          // 117709
+    new spell_garalon_pheromones_taunt();       // 123109
+    new spell_garalon_broken_leg();             // 122786
+    new spell_garalon_damaged();                // 123818
+    new spell_garalon_pheromones_summon();      // 128573 INSERT INTO spell_script_names (spell_id, ScriptName) VALUES (128573, "spell_garalon_pheromones_summon");
+    new spell_garalon_pheromones_trail_dmg();   // 123120 INSERT INTO spell_script_names (spell_id, ScriptName) VALUES (123120, "spell_garalon_pheromones_trail_dmg");
+    new spell_garalon_pheromones_switch();      // 123100 INSERT INTO spell_script_names (spell_id, ScriptName) VALUES (123100, "spell_garalon_pheromones_switch");
+    new spell_garalon_pungency();               // 123081
 }
