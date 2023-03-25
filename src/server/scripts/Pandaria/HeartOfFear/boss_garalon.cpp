@@ -274,13 +274,6 @@ class boss_garalon : public CreatureScript
 
             void EnterCombat(Unit* who) override
             {
-                if (!_EnterCombat())
-                {
-                    // Okay, if you fucking want teleport ONLY ONE player, let's do it
-                    who->NearTeleportTo(EncountersEntrance[0].GetPositionX(), EncountersEntrance[0].GetPositionY(), EncountersEntrance[0].GetPositionZ(), EncountersEntrance[0].GetOrientation());
-                    return;
-                }
-
                 SummonAndAddLegs();
 
                 me->AddAura(SPELL_CRUSH_BODY_VIS, me);  // And add the body crush marker.
