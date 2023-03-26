@@ -454,11 +454,6 @@ class boss_garalon : public CreatureScript
                         castingCrush = false;
                         break;
                     }
-                    case EVENT_MEND_LEG:
-                    {
-                        DoCast(me, SPELL_MEND_LEG);
-                        break;
-                    }
                     case EVENT_GARALON_BERSERK:
                     {
                         Talk(ANN_BERSERK);
@@ -542,7 +537,10 @@ class npc_garalon_body : public CreatureScript
                         Player* player = me->GetMap()->GetFirstPlayerInInstance();
                         garalon->LowerPlayerDamageReq(garalon->GetMaxHealth());
                         if (player)
+                        {
                             garalon->SetLootRecipient(player);
+                            player->RemoveAura(SPELL_PHEROMONES_AURA);
+                        }
                     }
                 }
             }
@@ -891,7 +889,6 @@ public:
     }
 };
 
-
 // Damaged: 123818
 class spell_garalon_damaged : public SpellScriptLoader
 {
@@ -1007,19 +1004,19 @@ public:
             return true;
         }
 
-        void HandleOnHit()
+        void CheckTargets(std::list<WorldObject*>& targets)
         {
-            if (Unit* target = GetHitUnit())
-            {
-                if (Aura* aur = target->GetAura(SPELL_PUNGENCY))
-                    SetHitDamage(int32(GetHitDamage() * (1.0f + float(aur->GetStackAmount() / 10.0f))));
-            }
-        }
+            if (Unit* caster = GetCaster())
+                if (caster->ToCreature())
+                    if (caster->ToCreature()->AI()->GetData(TYPE_PHEROMONES_DELAY))
+                        return;
 
+            targets.clear();
+        }
 
         void Register() override
         {
-            OnHit += SpellHitFn(spell_garalon_pheromones_trail_dmg_SpellScript::HandleOnHit);
+            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garalon_pheromones_trail_dmg_SpellScript::CheckTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
         }
     };
 
@@ -1122,6 +1119,7 @@ public:
             {
                 if (target->GetInstanceScript()->instance->IsHeroic())
                     SetDuration(240000);
+
             }
         }
 
@@ -1134,6 +1132,24 @@ public:
     AuraScript* GetAuraScript() const override
     {
         return new spell_garalon_pungencyAuraScript();
+    }
+};
+
+// Pheromones Damage Eff 123092
+class spell_garalon_pheromones_damage_eff : public SpellScript
+{
+    PrepareSpellScript(spell_garalon_pheromones_damage_eff);
+
+    void HandleOnHit()
+    {
+        if (Player* target = GetHitPlayer())
+            if (Aura* aur = target->GetAura(SPELL_PUNGENCY))
+                SetHitDamage(int32(GetHitDamage() * (1.0f + float(aur->GetStackAmount() / 10.0f))));
+    }
+
+    void Register() override
+    {
+        OnHit += SpellHitFn(spell_garalon_pheromones_damage_eff::HandleOnHit);
     }
 };
 
@@ -1155,4 +1171,5 @@ void AddSC_boss_garalon()
     new spell_garalon_pheromones_switch();      // 123100 INSERT INTO spell_script_names (spell_id, ScriptName) VALUES (123100, "spell_garalon_pheromones_switch");
     new spell_script<spell_garalon_borken_leg>("spell_garalon_borken_leg");
     new spell_garalon_pungency();               // 123081
+    new spell_script<spell_garalon_pheromones_damage_eff>("spell_garalon_pheromones_damage_eff");
 }
