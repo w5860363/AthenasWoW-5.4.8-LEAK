@@ -331,8 +331,14 @@ class boss_wind_lord_meljarak : public CreatureScript
                         if (groupDict.find(actionId)->second == GROUP_ALIVE)
                         {
                             groupDict.find(actionId)->second = GROUP_KILLED;
-
-                            DoCast(me, IsHeroic() ? SPELL_RECKLESNESS_H : SPELL_RECKLESNESS_N, true);
+                            
+                            if (IsHeroic())
+                            {
+                                me->AddAura(SPELL_RECKLESNESS_H, me);
+                            }
+                            // Normal mode
+                            else
+                                me->AddAura(SPELL_RECKLESNESS_N, me);
 
                             // Prevent Spam voice in Heroic if aura yet available
                             if (IsHeroic() && me->HasAura(SPELL_RECKLESNESS_H))
