@@ -246,6 +246,13 @@ class boss_garalon : public CreatureScript
 
             void EnterEvadeMode() override
             {
+                // Open walls
+                std::list<GameObject*> doorList;
+                GetGameObjectListWithEntryInGrid(doorList, me, GO_GARALON_DOOR, 100.0f);
+
+                for (GameObject* door : doorList)
+                    door->SetGoState(GO_STATE_ACTIVE);
+                
                 DespawnCreatures(NPC_PHEROMONE_TRAIL);
 
                 if (instance && me->GetVehicleKit())
