@@ -292,7 +292,6 @@ class boss_garalon : public CreatureScript
                 SummonAndAddLegs();
 
                 me->AddAura(SPELL_CRUSH_BODY_VIS, me);  // And add the body crush marker.
-                DoCast(me, SPELL_PHER_INIT_CAST);       // 2s cast time
 
                  // Activation of the walls
                 std::list<GameObject*> doorList;
@@ -300,12 +299,6 @@ class boss_garalon : public CreatureScript
 
                 for (GameObject* door : doorList)
                     door->SetGoState(GO_STATE_READY);
-
-                // This need only in combat initialize cuz rogue/hunter/elf issue
-                scheduler.Schedule(Seconds(4), [this](TaskContext)
-                {
-                    DoCast(me, SPELL_PHER_INIT_CAST);
-                });
 
                 events.ScheduleEvent(EVENT_FURIOUS_SWIPE, urand(8000, 11000));
                 events.ScheduleEvent(EVENT_PHEROMONES, urand(2000, 3000));
