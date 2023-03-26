@@ -1679,6 +1679,12 @@ void Player::Update(uint32 p_time)
     }
     if (m_assistTimer >= 2000)
         m_assistTimer -= 2000;
+	
+    if (GetMapId() == 1009)
+    {
+        if (HasAura(122786)) //hack remove aura
+            RemoveAura(122786);
+    }
 
     GetSpellHistory()->UpdateCharges();
 

@@ -1,0 +1,10 @@
+DELETE FROM `spell_script_names` WHERE `spell_id` IN (117709,122735,123081,123100,123109,123120,123808,123818,128573);
+INSERT INTO `spell_script_names` VALUES (117709, 'spell_garalon_crush_trigger');
+INSERT INTO `spell_script_names` VALUES (122735, 'spell_garalon_furious_swipe');
+INSERT INTO `spell_script_names` VALUES (123081, 'spell_garalon_pungency');
+INSERT INTO `spell_script_names` VALUES (123100, 'spell_garalon_pheromones_switch');
+INSERT INTO `spell_script_names` VALUES (123109, 'spell_garalon_pheromones_taunt');
+INSERT INTO `spell_script_names` VALUES (123120, 'spell_garalon_pheromones_trail_dmg');
+INSERT INTO `spell_script_names` VALUES (123808, 'spell_garalon_pheromones_forcecast');
+INSERT INTO `spell_script_names` VALUES (123818, 'spell_garalon_damaged');
+INSERT INTO `spell_script_names` VALUES (128573, 'spell_garalon_pheromones_summon');
